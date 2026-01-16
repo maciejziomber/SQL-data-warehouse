@@ -1,0 +1,69 @@
+# This code allows to upload multiple files into multiple sql tables.
+# Requirements: provide a connection string in part2. Provide Path to the files and the TABLE of destination for those files in step 1. 
+
+import pandas as pd
+import pyodbc
+import os
+
+# 1. Configuration: Map your local files to your SQL tables
+file_mapping = {
+    r'source_crm\cust_info.csv': '[bronze].[crm_cust_info]',
+    r'source_crm\prd_info.csv': '[bronze].[crm_prd_info]',
+    r'source_crm\sales_details.csv': '[bronze].[crm_sales_details]',
+    r'source_erp\CUST_AZ12.csv': '[bronze].[erp_cust_az12]',
+    r'source_erp\LOC_A101.csv': '[bronze].[erp_loc_a101]',
+    r'source_erp\PX_CAT_G1V2.csv': '[bronze].[erp_px_cat_g1v2]'
+}
+
+base_path = r'C:\Users\mziomber\Desktop\Data Warehouse\Files'
+
+# 2. Connection Settings
+conn_str = (
+    "DRIVER={SQL Server};"
+    "SERVER=sqlods;"
+    "DATABASE=Integration_Completions_Test;"
+    "Trusted_Connection=yes;"
+)
+
+try:
+    conn = pyodbc.connect(conn_str)
+    cursor = conn.cursor()
+    print("Successfully connected to the database.\n" + "-"*50)
+
+    for relative_path, table_name in file_mapping.items():
+        full_path = os.path.join(base_path, relative_path)
+        
+        if not os.path.exists(full_path):
+            print(f"Skipping: File not found at {full_path}")
+            continue
+
+        print(f"Processing: {table_name}...")
+
+        # Load CSV
+        df = pd.read_csv(full_path)
+        # Ensure legacy driver compatibility (fix for the float/None error)
+        df = df.astype(object).where(pd.notnull(df), None)
+
+        # Clean the table before loading (Standard Data Warehouse Practice)
+        cursor.execute(f"TRUNCATE TABLE {table_name}")
+
+        # Dynamic SQL Generation (Automatically creates the right number of ?)
+        placeholders = ", ".join(["?"] * len(df.columns))
+        insert_sql = f"INSERT INTO {table_name} VALUES ({placeholders})"
+
+        # Efficient Loading
+        for row in df.itertuples(index=False, name=None):
+            cursor.execute(insert_sql, row)
+        
+        conn.commit()
+        print(f"Success: {len(df)} rows loaded into {table_name}.")
+
+    print("-"*50 + "\nAll uploads complete!")
+
+except Exception as e:
+    print(f"Critical Error: {e}")
+
+finally:
+    if 'conn' in locals():
+        cursor.close()
+        conn.close()
