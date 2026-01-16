@@ -1,0 +1,37 @@
+# This script allows to upload a single file to previously created database
+# Requirements: You need to establish connection, specify TABLE of the destination, and provide a path to your original file
+
+import pandas as pd
+import pyodbc
+
+# 1. Load your CSV
+df = pd.read_csv(r'C:\Users\mziomber\Desktop\Data Warehouse\Files\source_crm\cust_info.csv')
+
+# KEY FIX: Cast to object type THEN replace NaNs with None
+# This ensures that 'None' is treated as a database NULL for legacy drivers
+df = df.astype(object).where(pd.notnull(df), None)
+
+# 2. Establish connection
+conn_str = (
+    "DRIVER={SQL Server};"
+    "SERVER=sqlods;"
+    "DATABASE=Integration_Completions_Test;"
+    "Trusted_Connection=yes;"
+)
+conn = pyodbc.connect(conn_str)
+cursor = conn.cursor()
+
+# 3. Dynamic SQL markers (handles the 7 columns automatically)
+placeholders = ", ".join(["?"] * len(df.columns))
+insert_sql = f"INSERT INTO bronze.crm_cust_info VALUES ({placeholders})" 
+
+try:
+    for index, row in df.iterrows():
+        cursor.execute(insert_sql, tuple(row))
+    conn.commit()
+    print(f"Data loaded successfully! {len(df)} rows inserted.")
+except Exception as e:
+    print(f"Error: {e}")
+finally:
+    cursor.close()
+    conn.close()
