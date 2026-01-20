@@ -1,0 +1,49 @@
+-- Tranformations on table 5 from bronze to silver layer
+-- Query
+SELECT
+cid,
+cntry
+FROM bronze.erp_loc_a101
+
+-- Remove '-' from cid to match other tables
+SELECT
+cid,
+REPLACE(cid, '-', '') AS cid,
+cntry
+FROM bronze.erp_loc_a101
+
+-- Now check if it's in the other table
+SELECT
+cid,
+REPLACE(cid, '-', '') AS cid,
+cntry
+FROM bronze.erp_loc_a101
+WHERE REPLACE(cid, '-', '') NOT IN (SELECT cst_key FROM silver.crm_cust_info)
+
+-- Now look at countires column
+
+SELECT DISTINCT 
+cntry,
+CASE WHEN TRIM(cntry) = 'DE' THEN 'Germany'
+    WHEN TRIM(cntry) IN ('US', 'USA') THEN 'United States'
+    WHEN TRIM(cntry) = '' OR cntry is NULL THEN 'n/a'
+    ELSE TRIM (cntry)
+END AS cntry
+FROM bronze.erp_loc_a101
+
+-- Final Result and Insert into table
+INSERT INTO silver.erp_loc_a101 (
+    cid,
+    cntry
+)
+SELECT
+REPLACE(cid, '-', '') AS cid,
+CASE WHEN TRIM(cntry) = 'DE' THEN 'Germany'
+    WHEN TRIM(cntry) IN ('US', 'USA') THEN 'United States'
+    WHEN TRIM(cntry) = '' OR cntry is NULL THEN 'n/a'
+    ELSE TRIM (cntry)
+END AS cntry
+FROM bronze.erp_loc_a101
+
+SELECT *
+FROM silver.erp_loc_a101
