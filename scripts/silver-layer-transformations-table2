@@ -1,0 +1,168 @@
+-- Query the table
+SELECT TOP (1000) [prd_id]
+      ,[prd_key]
+      ,[prd_nm]
+      ,[prd_cost]
+      ,[prd_line]
+      ,[prd_start_dt]
+      ,[prd_end_dt]
+  FROM [Integration_Completions_Test].[bronze].[crm_prd_info]
+
+-- Check for PK duplicates
+  SELECT TOP (1000)
+  prd_id,
+  COUNT(*)
+  FROM [Integration_Completions_Test].[bronze].[crm_prd_info]
+  GROUP BY prd_id
+  HAVING COUNT(*) > 1 OR prd_id IS NULL 
+
+-- Extract first 5 characters from prd_key and replace '-' with '_'
+  SELECT 
+    prd_id,
+    prd_key,
+    REPLACE(SUBSTRING(prd_key, 1, 5), '-', '_') AS cat_id,
+    prd_nm,
+    prd_cost,
+    prd_line,
+    prd_start_dt,
+    prd_end_dt
+  FROM [Integration_Completions_Test].[bronze].[crm_prd_info]
+
+  -- Check which cat_id is not in the other table
+  SELECT 
+    prd_id,
+    prd_key,
+    REPLACE(SUBSTRING(prd_key, 1, 5), '-', '_') AS cat_id,
+    prd_nm,
+    prd_cost,
+    prd_line,
+    prd_start_dt,
+    prd_end_dt
+  FROM [Integration_Completions_Test].[bronze].[crm_prd_info]
+  WHERE REPLACE(SUBSTRING(prd_key, 1, 5), '-', '_') NOT IN
+  (SELECT DISTINCT id from bronze.erp_px_cat_g1v2)
+
+  -- Extract the rest of prd_key
+  SELECT 
+    prd_id,
+    prd_key,
+    REPLACE(SUBSTRING(prd_key, 1, 5), '-', '_') AS cat_id,
+    SUBSTRING(prd_key, 7, LEN(prd_key)) AS prd_key,
+    prd_nm,
+    prd_cost,
+    prd_line,
+    prd_start_dt,
+    prd_end_dt
+  FROM [Integration_Completions_Test].[bronze].[crm_prd_info]
+
+  --Join the correct prd_key with prd_key from other table
+    SELECT 
+    prd_id,
+    prd_key,
+    REPLACE(SUBSTRING(prd_key, 1, 5), '-', '_') AS cat_id,
+    SUBSTRING(prd_key, 7, LEN(prd_key)) AS prd_key,
+    prd_nm,
+    prd_cost,
+    prd_line,
+    prd_start_dt,
+    prd_end_dt
+  FROM [Integration_Completions_Test].[bronze].[crm_prd_info]
+    WHERE SUBSTRING(prd_key, 7, LEN(prd_key)) NOT IN
+    (SELECT DISTINCT sls_prd_key FROM bronze.crm_sales_details)
+
+-- Check for unwanted spaces
+SELECT 
+prd_nm
+FROM bronze.crm_prd_info
+WHERE prd_nm != TRIM(prd_nm)
+
+-- Check for NULLs or Negative Numbers
+SELECT 
+prd_cost
+FROM bronze.crm_prd_info
+WHERE prd_cost < 0 OR prd_cost IS NULL
+
+-- Replace Nulls with 0
+
+SELECT 
+    prd_id,
+    prd_key,
+    REPLACE(SUBSTRING(prd_key, 1, 5), '-', '_') AS cat_id,
+    SUBSTRING(prd_key, 7, LEN(prd_key)) AS prd_key,
+    prd_nm,
+    ISNULL(prd_cost, 0) AS prd_cost,
+    prd_line,
+    prd_start_dt,
+    prd_end_dt
+  FROM [Integration_Completions_Test].[bronze].[crm_prd_info]
+
+
+-- Update Product line column
+  SELECT DISTINCT prd_line
+  FROM bronze.crm_prd_info
+
+-- Update the table with standardization for product line column
+
+SELECT 
+    prd_id,
+    prd_key,
+    REPLACE(SUBSTRING(prd_key, 1, 5), '-', '_') AS cat_id,
+    SUBSTRING(prd_key, 7, LEN(prd_key)) AS prd_key,
+    prd_nm,
+    ISNULL(prd_cost, 0) AS prd_cost,
+    CASE WHEN UPPER(prd_line) = 'M' THEN 'Mountain'
+        WHEN UPPER(prd_line) = 'R' THEN 'Road'
+        WHEN UPPER(prd_line) = 'S' THEN 'other Sales'
+        WHEN UPPER(prd_line) = 'T' THEN 'Touring'
+        ELSE 'n/a'
+    END AS prd_line,
+    prd_start_dt,
+    prd_end_dt
+  FROM [Integration_Completions_Test].[bronze].[crm_prd_info]
+
+  -- Check for invalid dates
+  SELECT *
+  FROM bronze.crm_prd_info
+  WHERE prd_end_dt < prd_start_dt
+
+  -- Reorganize the data 
+
+  SELECT
+  prd_id,
+  prd_key,
+  prd_nm,
+  prd_start_dt,
+  prd_end_dt,
+  LEAD(prd_start_dt) OVER (PARTITION BY prd_key ORDER BY prd_start_dt) AS prd_end_dt_test
+  FROM bronze.crm_prd_info
+   WHERE prd_key IN ('AC-HE-HL-U509-R', 'AC-HE-HL-U509')
+
+-- Put it together and upload into silver layer
+INSERT INTO silver.crm_prd_info (
+    prd_id,
+    cat_id,
+    prd_key,
+    prd_nm,
+    prd_cost,
+    prd_line,
+    prd_start_dt,
+    prd_end_dt
+)
+SELECT 
+    prd_id,
+    REPLACE(SUBSTRING(prd_key, 1, 5), '-', '_') AS cat_id,
+    SUBSTRING(prd_key, 7, LEN(prd_key)) AS prd_key,
+    prd_nm,
+    ISNULL(prd_cost, 0) AS prd_cost,
+    CASE WHEN UPPER(prd_line) = 'M' THEN 'Mountain'
+        WHEN UPPER(prd_line) = 'R' THEN 'Road'
+        WHEN UPPER(prd_line) = 'S' THEN 'other Sales'
+        WHEN UPPER(prd_line) = 'T' THEN 'Touring'
+        ELSE 'n/a'
+    END AS prd_line,
+    CAST(prd_start_dt AS DATE) AS prd_start_dt,
+    CAST(LEAD(prd_start_dt) OVER (PARTITION BY prd_key ORDER BY prd_start_dt) AS DATE) AS prd_end_dt
+  FROM [Integration_Completions_Test].[bronze].[crm_prd_info]
+
+SELECT *
+FROM silver.crm_prd_info
