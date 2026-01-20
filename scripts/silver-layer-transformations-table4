@@ -1,0 +1,61 @@
+-- Transformation Table 4 from Bronze to Silver layer
+
+SELECT 
+cid,
+bdate,
+gen
+FROM [Integration_Completions_Test].[bronze].[erp_cust_az12]
+
+-- Need to match cid with customer id from other table
+SELECT 
+CASE WHEN cid LIKE 'NAS%' THEN SUBSTRING(cid, 4, LEN(cid))
+ELSE cid
+END AS cid2,
+bdate,
+gen
+FROM [Integration_Completions_Test].[bronze].[erp_cust_az12]
+
+-- Check bday
+SELECT DISTINCT
+bdate
+FROM bronze.erp_cust_az12
+WHERE bdate < '1924-01-01' OR bdate > GETDATE()
+
+-- write a transformation for bdate column
+SELECT 
+CASE WHEN cid LIKE 'NAS%' THEN SUBSTRING(cid, 4, LEN(cid))
+ELSE cid
+END AS cid,
+CASE WHEN bdate > GETDATE() THEN NULL
+    ELSE bdate
+END AS bdate,
+gen
+FROM [Integration_Completions_Test].[bronze].[erp_cust_az12]
+
+-- Check gender column 
+SELECT DISTINCT
+gen
+FROM bronze.erp_cust_az12
+
+-- Final transformation and Insert into a table
+INSERT INTO silver.erp_cust_az12 (
+cid,
+bdate,
+gen
+)
+
+SELECT 
+CASE WHEN cid LIKE 'NAS%' THEN SUBSTRING(cid, 4, LEN(cid))
+ELSE cid
+END AS cid,
+CASE WHEN bdate > GETDATE() THEN NULL
+    ELSE bdate
+END AS bdate,
+CASE WHEN UPPER(TRIM(gen)) IN ('F', 'FEMALE') THEN 'Female'
+    WHEN UPPER(TRIM(gen)) IN ('M', 'MALE') THEN 'Male'
+    ELSE 'n/a'
+END AS gen
+FROM [Integration_Completions_Test].[bronze].[erp_cust_az12]
+
+SELECT *
+FROM silver.erp_cust_az12
